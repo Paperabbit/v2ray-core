@@ -8,6 +8,8 @@ const (
 	idSessionKey sessionKey = iota
 	inboundSessionKey
 	outboundSessionKey
+	contentSessionKey
+	muxPreferedSessionKey
 )
 
 // ContextWithID returns a new context with the given ID.
@@ -43,4 +45,28 @@ func OutboundFromContext(ctx context.Context) *Outbound {
 		return outbound
 	}
 	return nil
+}
+
+func ContextWithContent(ctx context.Context, content *Content) context.Context {
+	return context.WithValue(ctx, contentSessionKey, content)
+}
+
+func ContentFromContext(ctx context.Context) *Content {
+	if content, ok := ctx.Value(contentSessionKey).(*Content); ok {
+		return content
+	}
+	return nil
+}
+
+// ContextWithMuxPrefered returns a new context with the given bool
+func ContextWithMuxPrefered(ctx context.Context, forced bool) context.Context {
+	return context.WithValue(ctx, muxPreferedSessionKey, forced)
+}
+
+// MuxPreferedFromContext returns value in this context, or false if not contained.
+func MuxPreferedFromContext(ctx context.Context) bool {
+	if val, ok := ctx.Value(muxPreferedSessionKey).(bool); ok {
+		return val
+	}
+	return false
 }

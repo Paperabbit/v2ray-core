@@ -1,5 +1,5 @@
-load("@v2ray_ext//bazel:build.bzl", "foreign_go_binary")
-load("@v2ray_ext//bazel:gpg.bzl", "gpg_sign")
+load("//infra/bazel:build.bzl", "foreign_go_binary")
+load("//infra/bazel:gpg.bzl", "gpg_sign")
 
 def gen_targets(matrix):
   pkg = "v2ray.com/core/main"
@@ -61,6 +61,21 @@ def gen_targets(matrix):
         os = os,
         arch = arch,
         arm = "7",
+      )
+
+      gpg_sign(
+        name = bin_name + "_sig",
+        base = ":" + bin_name,
+      )
+
+      bin_name = "v2ray_" + os + "_" + arch + "_armv6"
+      foreign_go_binary(
+        name = bin_name,
+        pkg = pkg,
+        output = output+"_armv6",
+        os = os,
+        arch = arch,
+        arm = "6",
       )
 
       gpg_sign(

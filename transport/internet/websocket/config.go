@@ -1,3 +1,5 @@
+// +build !confonly
+
 package websocket
 
 import (
@@ -11,7 +13,7 @@ const protocolName = "websocket"
 
 func (c *Config) GetNormalizedPath() string {
 	path := c.Path
-	if len(path) == 0 {
+	if path == "" {
 		return "/"
 	}
 	if path[0] != '/' {

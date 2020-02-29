@@ -1,3 +1,5 @@
+// +build !confonly
+
 package socks
 
 import (
@@ -61,6 +63,12 @@ func (s *Server) Network() []net.Network {
 
 // Process implements proxy.Inbound.
 func (s *Server) Process(ctx context.Context, network net.Network, conn internet.Connection, dispatcher routing.Dispatcher) error {
+	if inbound := session.InboundFromContext(ctx); inbound != nil {
+		inbound.User = &protocol.MemoryUser{
+			Level: s.config.UserLevel,
+		}
+	}
+
 	switch network {
 	case net.Network_TCP:
 		return s.processTCP(ctx, conn, dispatcher)
@@ -100,6 +108,9 @@ func (s *Server) processTCP(ctx context.Context, conn internet.Connection, dispa
 		}
 		return newError("failed to read request").Base(err)
 	}
+	if request.User != nil {
+		inbound.User.Email = request.User.Email
+	}
 
 	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		newError("failed to clear deadline").Base(err).WriteToLog(session.ExportIDToError(ctx))
@@ -109,7 +120,7 @@ func (s *Server) processTCP(ctx context.Context, conn internet.Connection, dispa
 		dest := request.Destination()
 		newError("TCP Connect request to ", dest).WriteToLog(session.ExportIDToError(ctx))
 		if inbound != nil && inbound.Source.IsValid() {
-			log.Record(&log.AccessMessage{
+			ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
 				From:   inbound.Source,
 				To:     dest,
 				Status: log.AccessAccepted,
@@ -198,7 +209,7 @@ func (s *Server) handleUDPPayload(ctx context.Context, conn internet.Connection,
 		newError("client UDP connection from ", inbound.Source).WriteToLog(session.ExportIDToError(ctx))
 	}
 
-	reader := buf.NewReader(conn)
+	reader := buf.NewPacketReader(conn)
 	for {
 		mpayload, err := reader.ReadMultiBuffer()
 		if err != nil {
@@ -221,7 +232,7 @@ func (s *Server) handleUDPPayload(ctx context.Context, conn internet.Connection,
 
 			newError("send packet to ", request.Destination(), " with ", payload.Len(), " bytes").AtDebug().WriteToLog(session.ExportIDToError(ctx))
 			if inbound := session.InboundFromContext(ctx); inbound != nil && inbound.Source.IsValid() {
-				log.Record(&log.AccessMessage{
+				ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
 					From:   inbound.Source,
 					To:     request.Destination(),
 					Status: log.AccessAccepted,

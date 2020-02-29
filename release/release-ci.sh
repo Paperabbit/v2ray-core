@@ -26,7 +26,7 @@ VUSER=$(getattr "b_user" "project")
 mkdir -p /v2/build
 
 pushd /v2/build
-BAZEL_VER=0.17.2
+BAZEL_VER=0.23.0
 curl -L -O https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VER}/bazel-${BAZEL_VER}-installer-linux-x86_64.sh
 chmod +x bazel-${BAZEL_VER}-installer-linux-x86_64.sh
 ./bazel-${BAZEL_VER}-installer-linux-x86_64.sh
@@ -38,7 +38,7 @@ echo ${SIGN_KEY_PASS} | gpg --passphrase-fd 0 --batch --import /v2/build/sign_ke
 curl -L -o /v2/build/releases https://api.github.com/repos/v2ray/v2ray-core/releases
 
 GO_INSTALL=golang.tar.gz
-curl -L -o ${GO_INSTALL} https://storage.googleapis.com/golang/go1.11.2.linux-amd64.tar.gz
+curl -L -o ${GO_INSTALL} https://storage.googleapis.com/golang/go1.11.5.linux-amd64.tar.gz
 tar -C /usr/local -xzf ${GO_INSTALL}
 export PATH=$PATH:/usr/local/go/bin
 
@@ -46,8 +46,8 @@ mkdir -p /v2/src
 export GOPATH=/v2
 
 # Download all source code
-go get -t v2ray.com/core/...
-go get -t v2ray.com/ext/...
+go get -insecure -t v2ray.com/core/...
+go get -insecure -t v2ray.com/ext/...
 
 pushd $GOPATH/src/v2ray.com/core/
 git checkout tags/${RELEASE_TAG}
@@ -60,13 +60,11 @@ popd
 
 pushd $GOPATH/src/v2ray.com/core/
 # Update geoip.dat
-GEOIP_TAG=$(curl --silent "https://api.github.com/repos/v2ray/geoip/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-curl -L -o release/config/geoip.dat "https://github.com/v2ray/geoip/releases/download/${GEOIP_TAG}/geoip.dat"
+curl -L -o release/config/geoip.dat "https://github.com/v2ray/geoip/releases/latest/download/geoip.dat"
 sleep 1
 
 # Update geosite.dat
-GEOSITE_TAG=$(curl --silent "https://api.github.com/repos/v2ray/domain-list-community/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-curl -L -o release/config/geosite.dat "https://github.com/v2ray/domain-list-community/releases/download/${GEOSITE_TAG}/dlc.dat"
+curl -L -o release/config/geosite.dat "https://github.com/v2ray/domain-list-community/releases/latest/download/dlc.dat"
 sleep 1
 popd
 
@@ -90,8 +88,9 @@ RELEASE_ID=$(curl --data "${JSON_DATA}" -H "Authorization: token ${GITHUB_TOKEN}
 function uploadfile() {
   FILE=$1
   CTYPE=$(file -b --mime-type $FILE)
-  curl -H "Authorization: token ${GITHUB_TOKEN}" -H "Content-Type: ${CTYPE}" --data-binary @$FILE "https://uploads.github.com/repos/v2ray/v2ray-core/releases/${RELEASE_ID}/assets?name=$(basename $FILE)"
 
+  sleep 1
+  curl -H "Authorization: token ${GITHUB_TOKEN}" -H "Content-Type: ${CTYPE}" --data-binary @$FILE "https://uploads.github.com/repos/v2ray/v2ray-core/releases/${RELEASE_ID}/assets?name=$(basename $FILE)"
   sleep 1
 }
 
@@ -193,12 +192,16 @@ cp ${ART_ROOT}/v2ray-openbsd-64.zip .
 cp ${ART_ROOT}/v2ray-openbsd-32.zip .
 cp ${ART_ROOT}/v2ray-dragonfly-64.zip .
 cp /v2/build/src_all.zip .
+cp "$GOPATH/src/v2ray.com/core/release/install-release.sh" ./install.sh
+
+sed -i "s/^NEW_VER=\"\"$/NEW_VER=\"${RELEASE_TAG}\"/" install.sh
+sed -i 's/^DIST_SRC=".*"$/DIST_SRC="jsdelivr"/' install.sh
 
 git add .
 git commit -m "Version ${RELEASE_TAG}"
 git tag -a "${RELEASE_TAG}" -m "Version ${RELEASE_TAG}"
 git remote add origin "https://${GITHUB_TOKEN}@github.com/v2ray/dist"
-git push -u --force origin master
+git push -u --force --follow-tags origin master
 
 fi
 

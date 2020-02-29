@@ -1,3 +1,5 @@
+// +build !confonly
+
 package reverse
 
 import (
@@ -5,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"v2ray.com/core/common/buf"
 	"v2ray.com/core/common/mux"
 	"v2ray.com/core/common/net"
 	"v2ray.com/core/common/session"
@@ -25,10 +28,10 @@ type Bridge struct {
 
 // NewBridge creates a new Bridge instance.
 func NewBridge(config *BridgeConfig, dispatcher routing.Dispatcher) (*Bridge, error) {
-	if len(config.Tag) == 0 {
+	if config.Tag == "" {
 		return nil, newError("bridge tag is empty")
 	}
-	if len(config.Domain) == 0 {
+	if config.Domain == "" {
 		return nil, newError("bridge domain is empty")
 	}
 
@@ -117,6 +120,13 @@ func NewBridgeWorker(domain string, tag string, d routing.Dispatcher) (*BridgeWo
 		tag:        tag,
 	}
 
+	// Initialize the connection by sending a Keepalive frame
+	keepalive := buf.New()
+	mux.FrameMetadata{SessionStatus: mux.SessionStatusKeepAlive}.WriteTo(keepalive)
+	err = link.Writer.WriteMultiBuffer(buf.MultiBuffer{keepalive})
+	if err != nil {
+		return nil, err
+	}
 	worker, err := mux.NewServerWorker(context.Background(), w, link)
 	if err != nil {
 		return nil, err
