@@ -392,8 +392,8 @@ func TestStaticHostDomain(t *testing.T) {
 				},
 				StaticHosts: []*Config_HostMapping{
 					{
-						Type:          DomainMatchingType_Full,
-						Domain:        "example.com",
+						Type:          DomainMatchingType_New,
+						Domain:        "fexample.com",
 						ProxiedDomain: "google.com",
 					},
 				},

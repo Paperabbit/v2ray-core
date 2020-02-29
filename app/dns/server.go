@@ -70,6 +70,13 @@ func New(ctx context.Context, config *Config) (*Server, error) {
 		clients: make([]Client, 0, len(config.NameServers)+len(config.NameServer)),
 		tag:     config.Tag,
 	}
+
+	// Prepare external rules for matchers generating
+	rawExternalRules := make(map[string][]string)
+	for key, value := range config.ExternalRules {
+		rawExternalRules[key] = value.Patterns
+	}
+
 	if server.tag == "" {
 		server.tag = generateRandomTag()
 	}
@@ -80,7 +87,7 @@ func New(ctx context.Context, config *Config) (*Server, error) {
 		server.clientIP = net.IP(config.ClientIp)
 	}
 
-	hosts, err := NewStaticHosts(config.StaticHosts, config.Hosts)
+	hosts, err := NewStaticHosts(config.StaticHosts, config.Hosts, rawExternalRules)
 	if err != nil {
 		return nil, newError("failed to create hosts").Base(err)
 	}
@@ -151,11 +158,13 @@ func New(ctx context.Context, config *Config) (*Server, error) {
 			idx := addNameServer(ns.Address)
 
 			for _, domain := range ns.PrioritizedDomain {
-				matcher, err := toStrMatcher(domain.Type, domain.Domain)
+				if domain.Type != DomainMatchingType_New {
+					domain.Domain = typeMapper[domain.Type] + domain.Domain
+				}
+				midx, err := domainMatcher.ParsePattern(domain.Domain, rawExternalRules)
 				if err != nil {
 					return nil, newError("failed to create prioritized domain").Base(err).AtWarning()
 				}
-				midx := domainMatcher.Add(matcher)
 				domainIndexMap[midx] = uint32(idx)
 			}
 
@@ -181,6 +190,10 @@ func New(ctx context.Context, config *Config) (*Server, error) {
 
 	if len(server.clients) == 0 {
 		server.clients = append(server.clients, NewLocalNameServer())
+	}
+
+	if err := InitFakeIPServer(config.Fake, rawExternalRules); err != nil {
+		return nil, newError("failed to initilaize fake ip server").Base(err)
 	}
 
 	return server, nil
@@ -254,6 +267,7 @@ func (s *Server) LookupIP(domain string) ([]net.IP, error) {
 	return s.lookupIPInternal(domain, IPOption{
 		IPv4Enable: true,
 		IPv6Enable: true,
+		FakeEnable: true,
 	})
 }
 
@@ -262,6 +276,7 @@ func (s *Server) LookupIPv4(domain string) ([]net.IP, error) {
 	return s.lookupIPInternal(domain, IPOption{
 		IPv4Enable: true,
 		IPv6Enable: false,
+		FakeEnable: true,
 	})
 }
 
@@ -270,6 +285,34 @@ func (s *Server) LookupIPv6(domain string) ([]net.IP, error) {
 	return s.lookupIPInternal(domain, IPOption{
 		IPv4Enable: false,
 		IPv6Enable: true,
+		FakeEnable: true,
+	})
+}
+
+// LookupRealIP implements dns.Client.
+func (s *Server) LookupRealIP(domain string) ([]net.IP, error) {
+	return s.lookupIPInternal(domain, IPOption{
+		IPv4Enable: true,
+		IPv6Enable: true,
+		FakeEnable: false,
+	})
+}
+
+// LookupRealIPv4 implements dns.IPv4Lookup.
+func (s *Server) LookupRealIPv4(domain string) ([]net.IP, error) {
+	return s.lookupIPInternal(domain, IPOption{
+		IPv4Enable: true,
+		IPv6Enable: false,
+		FakeEnable: false,
+	})
+}
+
+// LookupRealIPv6 implements dns.IPv6Lookup.
+func (s *Server) LookupRealIPv6(domain string) ([]net.IP, error) {
+	return s.lookupIPInternal(domain, IPOption{
+		IPv4Enable: false,
+		IPv6Enable: true,
+		FakeEnable: false,
 	})
 }
 
@@ -322,6 +365,14 @@ func (s *Server) lookupIPInternal(domain string, option IPOption) ([]net.IP, err
 		newdomain := ips[0].Domain()
 		newError("domain replaced: ", domain, " -> ", newdomain).WriteToLog()
 		domain = newdomain
+	}
+
+	if option.FakeEnable {
+		ips = GetFakeIPForDomain(domain)
+		if ips != nil {
+			newError("returning fake IP ", ips[0].String(), " for domain ", domain).WriteToLog()
+			return toNetIP(ips), nil
+		}
 	}
 
 	var lastErr error

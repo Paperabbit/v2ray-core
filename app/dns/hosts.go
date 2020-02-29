@@ -15,27 +15,15 @@ type StaticHosts struct {
 	matchers *strmatcher.MatcherGroup
 }
 
-var typeMap = map[DomainMatchingType]strmatcher.Type{
-	DomainMatchingType_Full:      strmatcher.Full,
-	DomainMatchingType_Subdomain: strmatcher.Domain,
-	DomainMatchingType_Keyword:   strmatcher.Substr,
-	DomainMatchingType_Regex:     strmatcher.Regex,
-}
-
-func toStrMatcher(t DomainMatchingType, domain string) (strmatcher.Matcher, error) {
-	strMType, f := typeMap[t]
-	if !f {
-		return nil, newError("unknown mapping type", t).AtWarning()
-	}
-	matcher, err := strMType.New(domain)
-	if err != nil {
-		return nil, newError("failed to create str matcher").Base(err)
-	}
-	return matcher, nil
+var typeMapper = map[DomainMatchingType]string{
+	DomainMatchingType_Full:      "f",
+	DomainMatchingType_Subdomain: "d",
+	DomainMatchingType_Keyword:   "k",
+	DomainMatchingType_Regex:     "r",
 }
 
 // NewStaticHosts creates a new StaticHosts instance.
-func NewStaticHosts(hosts []*Config_HostMapping, legacy map[string]*net.IPOrDomain) (*StaticHosts, error) {
+func NewStaticHosts(hosts []*Config_HostMapping, legacy map[string]*net.IPOrDomain, externalRules map[string][]string) (*StaticHosts, error) {
 	g := new(strmatcher.MatcherGroup)
 	sh := &StaticHosts{
 		ips:      make([][]net.Address, len(hosts)+len(legacy)+16),
@@ -46,9 +34,8 @@ func NewStaticHosts(hosts []*Config_HostMapping, legacy map[string]*net.IPOrDoma
 		features.PrintDeprecatedFeatureWarning("simple host mapping")
 
 		for domain, ip := range legacy {
-			matcher, err := strmatcher.Full.New(domain)
+			id, err := g.ParsePattern("f"+domain, make(map[string][]string))
 			common.Must(err)
-			id := g.Add(matcher)
 
 			address := ip.AsAddress()
 			if address.Family().IsDomain() {
@@ -60,11 +47,13 @@ func NewStaticHosts(hosts []*Config_HostMapping, legacy map[string]*net.IPOrDoma
 	}
 
 	for _, mapping := range hosts {
-		matcher, err := toStrMatcher(mapping.Type, mapping.Domain)
+		if mapping.Type != DomainMatchingType_New {
+			mapping.Domain = typeMapper[mapping.Type] + mapping.Domain
+		}
+		id, err := g.ParsePattern(mapping.Domain, externalRules)
 		if err != nil {
 			return nil, newError("failed to create domain matcher").Base(err)
 		}
-		id := g.Add(matcher)
 		ips := make([]net.Address, 0, len(mapping.Ip)+1)
 		if len(mapping.Ip) > 0 {
 			for _, ip := range mapping.Ip {

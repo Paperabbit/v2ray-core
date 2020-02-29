@@ -14,7 +14,7 @@ message NameServer {
   v2ray.core.common.net.Endpoint address = 1;
 
   message PriorityDomain {
-    DomainMatchingType type = 1;
+    DomainMatchingType type = 1 [deprecated = true];
     string domain = 2;
   }
 
@@ -27,6 +27,7 @@ enum DomainMatchingType {
   Subdomain = 1;
   Keyword = 2;
   Regex = 3;
+  New = 4;
 }
 
 message Config {
@@ -45,7 +46,7 @@ message Config {
   bytes client_ip = 3;
 
   message HostMapping {
-    DomainMatchingType type = 1;
+    DomainMatchingType type = 1 [deprecated = true];
     string domain = 2;
 
     repeated bytes ip = 3;
@@ -59,4 +60,25 @@ message Config {
 
   // Tag is the inbound tag of DNS client.
   string tag = 6;
+
+  message Fake {
+    repeated string fake_rules = 1;
+    string fake_net = 2;
+    enum RegenerationType {
+      // Discard the LRU (Least recently used) IP (Default)
+      LRU = 0;
+      // Discard the oldest IP
+      Oldest = 1;
+      // Don't regenerate IP
+      None = 2;
+    }
+    RegenerationType regeneration = 3;
+  }
+  Fake fake = 7;
+
+  message patterns {
+    repeated string patterns = 1;
+  }
+
+  map<string, patterns> external_rules = 8;
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
@@ -42,6 +43,21 @@ func init() {
 	common.Must(err)
 	common.Must2(geositeFile.Write(listBytes))
 }
+
+type hostRulesWarpper struct {
+	mappings []*dns.Config_HostMapping
+}
+
+func (hrw hostRulesWarpper) Len() int {
+	return len(hrw.mappings)
+}
+func (hrw hostRulesWarpper) Swap(i, j int) {
+	hrw.mappings[i], hrw.mappings[j] = hrw.mappings[j], hrw.mappings[i]
+}
+func (hrw hostRulesWarpper) Less(i, j int) bool {
+	return hrw.mappings[i].Domain < hrw.mappings[j].Domain
+}
+
 func TestDnsConfigParsing(t *testing.T) {
 	geositePath := platform.GetAssetLocation("geosite.dat")
 	defer func() {
@@ -54,7 +70,9 @@ func TestDnsConfigParsing(t *testing.T) {
 			if err := json.Unmarshal([]byte(s), config); err != nil {
 				return nil, err
 			}
-			return config.Build()
+			con, err := config.Build()
+			sort.Sort(hostRulesWarpper{con.StaticHosts})
+			return con, err
 		}
 	}
 
@@ -73,6 +91,9 @@ func TestDnsConfigParsing(t *testing.T) {
 					"keyword:google": "8.8.8.8",
 					"regexp:.*\\.com": "8.8.4.4"
 				},
+				"fake": {
+					"fakeRules": ["geosite:test"]
+				},
 				"clientIp": "10.0.0.1"
 			}`,
 			Parser: parserCreator(),
@@ -90,38 +111,50 @@ func TestDnsConfigParsing(t *testing.T) {
 						},
 						PrioritizedDomain: []*dns.NameServer_PriorityDomain{
 							{
-								Type:   dns.DomainMatchingType_Subdomain,
-								Domain: "v2ray.com",
+								Type:   dns.DomainMatchingType_New,
+								Domain: "dv2ray.com",
 							},
 						},
 					},
 				},
 				StaticHosts: []*dns.Config_HostMapping{
 					{
-						Type:          dns.DomainMatchingType_Subdomain,
-						Domain:        "example.com",
+						Type:          dns.DomainMatchingType_New,
+						Domain:        "dexample.com",
 						ProxiedDomain: "google.com",
 					},
 					{
-						Type:   dns.DomainMatchingType_Full,
-						Domain: "example.com",
+						Type:   dns.DomainMatchingType_New,
+						Domain: "egeosite.dat:test",
 						Ip:     [][]byte{{10, 0, 0, 1}},
 					},
 					{
-						Type:   dns.DomainMatchingType_Keyword,
-						Domain: "google",
+						Type:   dns.DomainMatchingType_New,
+						Domain: "fv2ray.com",
+						Ip:     [][]byte{{127, 0, 0, 1}},
+					},
+					{
+						Type:   dns.DomainMatchingType_New,
+						Domain: "kgoogle",
 						Ip:     [][]byte{{8, 8, 8, 8}},
 					},
 					{
-						Type:   dns.DomainMatchingType_Regex,
-						Domain: ".*\\.com",
+						Type:   dns.DomainMatchingType_New,
+						Domain: "r.*\\.com",
 						Ip:     [][]byte{{8, 8, 4, 4}},
 					},
-					{
-						Type:   dns.DomainMatchingType_Full,
-						Domain: "v2ray.com",
-						Ip:     [][]byte{{127, 0, 0, 1}},
+				},
+				ExternalRules: map[string]*dns.ConfigPatterns{
+					"geosite.dat:test": {
+						Patterns: []string{
+							"fexample.com",
+						},
 					},
+				},
+				Fake: &dns.Config_Fake{
+					FakeNet:      "224.0.0.0/22",
+					FakeRules:    []string{"egeosite.dat:test"},
+					Regeneration: dns.Config_Fake_LRU,
 				},
 				ClientIp: []byte{10, 0, 0, 1},
 			},
